@@ -1,5 +1,5 @@
 {
- "apiUrl":"http://visitapp.la:3000/data",
+ "apiUrl":"http://visitapp.la:3000/api",
  "megaResidencial":"true",
- "raspName":"altozano-totem-8-balcanes"
+ "raspName":"Altozano Entrada Vehicular Balcanes totem 8"
 }
