@@ -7,40 +7,53 @@ import { exec } from 'child_process';
 
 const readRaspConfig = async () => {
     try {
-        let filePath = `./pi_settings.json`;
-        // console.log(filePath)
+        let filePath = `/home/pi/raspberry_monitor/pi_settings.json`;
+        console.log('filePath-------------->',filePath)
         const data = await fs.readFile(filePath, 'utf-8');
-        console.log('settings', data)
+        console.log('-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.')
+        console.log('data readFile', data)
+        console.log('-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.')
         return JSON.parse(data ?? {})
     } catch (error) {
         console.error(`Error al enviar los datos a visitapp: ${error}`);
     }
 }
-const { apiUrl, megaResidencial, raspName } = await readRaspConfig();
+const config = await readRaspConfig();
+const { apiUrl, megaResidencial, raspName}=config;
 // Nomeclatura=[nombre_residencial,Totem-Numero-Nombre_entrada,]
 let offLineCounter = 0;
 const maxOfflineCount = 5;
 const minutesToUpdateData = 1;
 
 const subtractSixHours = async (date) => {
-    const adjustedDate = new Date(date);
-    adjustedDate.setHours(adjustedDate.getHours() - 6);
-    return adjustedDate;
+    try {
+        const adjustedDate = new Date(date);
+        adjustedDate.setHours(adjustedDate.getHours() - 6);
+        return adjustedDate;
+
+    } catch (error) {
+        console.log(`Error en subtractSixHours${error}`)
+    }
 }
 
 const getPowerStatus = async () => {
-    return new Promise((resolve, reject) => {
-        exec('vcgencmd measure_volts', (error, stdout, stderr) => {
-            if (error) {
-                console.error('Error ejecutando vcgencmd measure_volts:', error);
-                reject(error);
-            } else {
-                const output = stdout.trim();
-                const volts = parseFloat(output.split('=')[1].replace('V', ''));
-                resolve(volts);
-            }
+    try {
+        return new Promise((resolve, reject) => {
+            exec('vcgencmd measure_volts', (error, stdout, stderr) => {
+                if (error) {
+                    console.error('Error ejecutando vcgencmd measure_volts:', error);
+                    reject(error);
+                } else {
+                    const output = stdout.trim();
+                    const volts = parseFloat(output.split('=')[1].replace('V', ''));
+                    resolve(volts);
+                }
+            });
         });
-    });
+    } catch (error) {
+        console.log(`Error en getPowerStatus: ${error}`)
+        return null
+    }
 }
 
 const getTemperature = async () => {
@@ -59,111 +72,135 @@ const checkInternet = async () => {
 }
 
 const getData = async () => {
-    const currentTimestamp = new Date();
-    const adjustedTimestamp = await subtractSixHours(currentTimestamp);
-    const timestamp = adjustedTimestamp.toISOString();
+    try {
+        const currentTimestamp = new Date();
+        const adjustedTimestamp = await subtractSixHours(currentTimestamp);
+        const timestamp = adjustedTimestamp.toISOString();
 
-    const cpuUsage = await new Promise((resolve) => {
-        osUtils.cpuUsage((v) => {
-            resolve(v * 100);
+        const cpuUsage = await new Promise((resolve) => {
+            osUtils.cpuUsage((v) => {
+                resolve(v * 100);
+            });
         });
-    });
 
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const memoryUsagePercentage = 100 - (freeMem / totalMem) * 100;
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const memoryUsagePercentage = 100 - (freeMem / totalMem) * 100;
 
-    const temperature = await getTemperature();
-    const isConnected = await checkInternet();
-    const hostname = raspName;
-    const powerStatus = await getPowerStatus();
+        const temperature = await getTemperature();
+        const isConnected = await checkInternet();
+        const hostname = raspName;
+        const powerStatus = await getPowerStatus();
 
-    return {
-        timeStamp:timestamp,
-        cpuUsage,
-        memoryUsagePercentage,
-        temperature,
-        powerUsage: powerStatus,
-        isConnected,
-        hostName:hostname,
-        offLineCounter, 
-    };
+        return {
+            timeStamp: timestamp,
+            cpuUsage,
+            memoryUsagePercentage,
+            temperature,
+            powerUsage: powerStatus,
+            isConnected,
+            hostName: hostname,
+            offLineCounter,
+        };
+    } catch (error) {
+        console.log(`Error en getPowerStatus: ${error}`)
+        return null
+    }
 }
 
 const sendData = async () => {
-    const data = await getData();
     // 
-    // Verificar conexión a Internet y gestionar contador
-    if (data.isConnected) {
+    try {
+        // Verificar conexión a Internet y gestionar contador
         try {
+            const data = await getData();
             const endPoint = `/raspberrys/addRaspberry`
             console.log(`url------------>${apiUrl}${endPoint}`)
             console.log(`data------------>`)
             console.log(data)
+            if (data.isConnected) {
+                const { data: responseData } = await axios.post(`${apiUrl}${endPoint}`, data, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    redirect: 'manual',
+                    timeout:4000,
+                
+                });
+                console.log(`\n`)
+                console.log(`data response from visitapp.la`)
+                console.log(responseData)
+                console.log(`\n`)
 
 
 
-
-
-            const { data: responseData } = await axios.post(`${apiUrl}${endPoint}`, data, {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                redirect: 'manual'
-            });
-
-
-            console.log(`\n`)
-            console.log(`data response from visitapp.la`)
-            console.log(responseData)
-            console.log(`\n`)
-
-
-
-            if (responseData ?? false) {
-                console.log('Enviando Datos...');
-                if (responseData.estatus) {
-                    console.log('!Online!')
-                    offLineCounter = 0; // Reiniciar contador si está conectado
+                if (responseData ?? false) {
+                    console.log('Enviando Datos...');
+                    if (responseData.estatus) {
+                        console.log('!Online!')
+                        offLineCounter = 0; // Reiniciar contador si está conectado
+                    }
+                } else {
+                    console.error('Error al sincronizar:', responseData);
                 }
+
             } else {
-                console.error('Error al sincronizar:', responseData);
+                offLineCounter++; // Incrementar contador si no está conectado
+                responseData.offlineCounter = offLineCounter;
+                console.log('Desconectado, intentos:', offLineCounter);
             }
+
+
+         
+
+
         } catch (error) {
             console.error(`Error al enviar los datos a visitapp: ${error}`);
         }
-    } else {
-        offLineCounter++; // Incrementar contador si no está conectado
-        responseData.offlineCounter = offLineCounter;
-        console.log('Desconectado, intentos:', offLineCounter);
-    }
 
-    console.log('Valor de maxOfflineCount antes de verificar el reinicio:', maxOfflineCount);
 
-    // Verificar si es necesario reiniciar
-    if (offLineCounter >= maxOfflineCount) {
-        console.log(`Reiniciando Raspberry Pi después de ${offLineCounter} inten                                             tos fallidos.`);
-        exec('sudo reboot', (error, stdout, stderr) => {
-            if (error) {
-                console.error('Error al reiniciar la Raspberry Pi:', error);
-                return;
-            }
-            console.log('Raspberry Pi reiniciada.');
-        });
+        console.log('Valor de maxOfflineCount antes de verificar el reinicio:', maxOfflineCount);
+
+        // Verificar si es necesario reiniciar
+        if (offLineCounter >= maxOfflineCount) {
+            console.log(`Reiniciando Raspberry Pi después de ${offLineCounter} inten                                             tos fallidos.`);
+            exec('sudo reboot', (error, stdout, stderr) => {
+                if (error) {
+                    console.error('Error al reiniciar la Raspberry Pi:', error);
+                    return;
+                }
+                console.log('Raspberry Pi reiniciada.');
+            });
+        }
+
+    } catch (error) {
+        console.log(`Error en sendData: ${error}`)
+        return null
     }
 }
+
+
+
+
+
+
 
 if (!megaResidencial) {
     console.log('Esta configuracion solo es para un mega-residencial')
 
 } else {
-    await sendData()
-    setInterval(async () => {
+    try {
         await sendData()
-    }, minutesToUpdateData * 60 * 1000);
-    // Enviar datos a la API cada minuto
-    console.log(`-----------Sincronizando con visitapp.la cada ${minutesToUpdateData} minutos---------`);
+        setInterval(async () => {
+            await sendData()
+        }, minutesToUpdateData * 60 * 1000);
+        // Enviar datos a la API cada minuto
+        console.log(`-----------Sincronizando con visitapp.la cada ${minutesToUpdateData} minutos---------`);
+    } catch (error) {
+        console.log(`Error to run raspMonitor.js: ${error}`)
 
+    }
 }
+
 
 

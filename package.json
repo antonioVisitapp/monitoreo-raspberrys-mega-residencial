@@ -5,7 +5,7 @@
   "main": "raspMonitor.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": " cls && nodemon raspMonitor.js"
+    "dev": " clear && nodemon raspMonitor.js"
   },
   "author": "",
   "license": "ISC",
